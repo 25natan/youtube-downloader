@@ -1,0 +1,4 @@
+build/
+dist/
+__pycache__/
+build_and_sign.sh
