@@ -13,5 +13,6 @@ python3 youtube_downloader.py
 ## Get MacOS app
 Download the `youtube_downloader.zip` file and extract the .app file and click on it to run the app
 
-<img src="https://raw.githubusercontent.com/25natan/youtube-downloader/main/empty.png" width="200" height="140">
-![downloads screen](./downloads.png)
+<img src="https://raw.githubusercontent.com/25natan/youtube-downloader/main/empty.png" width="500" height="300">
+
+<img src="https://raw.githubusercontent.com/25natan/youtube-downloader/main/downloads.png" width="500" height="300">
