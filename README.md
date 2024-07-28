@@ -1,7 +1,12 @@
-# YouTube Downloader Written In Python/Kivy
-Nice YouTube downloader app with GUI made with python's gui library kivy.<br>
-Can download single video or playlists to both mp4/mp3 formats.<br>
-Also it can download multiple videos simultaneously
+# Youtube Downloader
+Youtube video downloader with the ability to download in both mp3 / mp4 formats and also supports multiple video / playlists downloads
 
-[](empty.png)
-[](downloads.png)
+<img src="./preview.gif" alt="Youtube Downloader Preview" width="600" height="500">
+
+## Run from source
+```bash
+clone https://github.com/25natan/youtube-downloader.git
+cd youtube-downloader
+pip install pytubefix pyqt6
+python youtube_downloader.py
+```

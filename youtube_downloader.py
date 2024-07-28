@@ -1,236 +1,279 @@
-from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.widget import Widget
-from pytube import YouTube, Playlist
-from kivy.clock import Clock
-from kivy.lang import Builder
-from kivy.graphics import Rectangle, Color
+import os
+from queue import Queue
+from random import random
+import sys
+from threading import Event, Thread
+from PyQt6.QtWidgets import QApplication, QHBoxLayout, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QScrollArea, QProgressBar, QVBoxLayout, QStyleOption, QStyle
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QPainter, QFontMetrics
 from os.path import expanduser
 import ssl
-from multiprocessing import Process, Manager
-from random import random
+from pytubefix import YouTube, Playlist
 from time import sleep
+from functools import partial
 
-Builder.load_string("""
-#:import get_color_from_hex kivy.utils.get_color_from_hex
-<YouTubeDownloader>:
-    orientation: 'vertical'
-    spacing: 30
-    padding: self.width / 20
-    pos_hint: {'top': 1}
-    size_hint_y: 1 if not self.parent or self.parent.width / self.parent.height > 0.8 else self.parent.width * 1.25 / self.parent.height
-    Label:
-        id: title
-        text: 'YouTube\\nDownloader'
-        font_size: self.height * 0.4
-        halign: 'center'
-        color: get_color_from_hex('#f00060')
-    BoxLayout:
-        orientation: 'vertical'
-        spacing: 30
-        size_hint_y: 0.8
-        TextInput:
-            id: url
-            hint_text: 'Please enter a URL of YouTube video or playlist'
-            font_size: self.height * 0.3
-            canvas.after:
-                Color:
-                    rgba: 240/255, 0, 96/255, 1  # Set the color of the outline (blue in this case)
-                Line:
-                    width: 1.5
-                    rectangle: self.x, self.y, self.width, self.height
-        BoxLayout:
-            spacing: 10
-            Button:
-                text: 'Download MP4'
-                font_size: self.height * 0.3
-                on_release: root.download(url.text, 'MP4'); url.text = ''
-                background_color: get_color_from_hex("#f00060")
-                background_normal: ""
-            Button:
-                text: 'Download MP3'
-                font_size: self.height * 0.3
-                on_release: root.download(url.text, 'MP3'); url.text = ''
-                background_color: get_color_from_hex("#f00060")
-                background_normal: ''
-    ScrollView:
-        do_scroll_x: False
-        do_scroll_y: True
-        bar_width: 10
-        smooth_scroll_end: 20
-        BoxLayout:
-            id: update_box
-            orientation: 'vertical'
-            size_hint_y: None
-            height: self.minimum_height
-            spacing: 20
+# App constants
+APP_TITLE = 'Youtube Downloader'
+MP3_BUTTON_TYPE_TEXT = 'Download mp3'
+MP4_BUTTON_TYPE_TEXT = 'Download mp4'
+INPUT_PLACE_HOLDER = 'Please enter a URL of YouTube video or playlist'
+DOWNLOAD_FOLDER = expanduser('~/Downloads')
+TYPE_PROGRESS = 'progress'
+TYPE_TEXT = 'text'
+TYPE_PLAYLIST = 'playlist'
+TYPE_END = 'end'
+TYPE_DOWNLOAD_STOPPED = 'download stopped'
+DOWNLOAD_STOPPED = 'download stopped'
+DOWNLOADING_VIDEO_MSG ='Downloading Video'
+DOWNLOAD_VIDEO_ERROR = 'Couldn\'t download video'
+PROCESSING_URL_MSG = 'Processing playlist url'
+PROCESSING_URL_ERROR = 'Couldn\'t process playlist url'
+HALF_SECOND = 500
+WINDOW_WIDTH = 600
+WINDOW_HIGHT = 500
+END_DELAY = 0.5
 
-<CustomProgressBar>:
-    canvas.before:
-        Color:
-            rgba: 0.3, 0.3, 0.3, 1
-        Rectangle:
-            pos: self.pos
-            size: self.width, self.height
-
-<DownloadWidget>:
-    orientation: 'vertical'
-    size_hint_y: None
-    canvas.before:
-        Color:
-            rgba: 0.2, 0.2, 0.2, 1
-        Rectangle:
-            pos: self.pos
-            size: self.size
-    height: app.root.ids.title.height / 3
-    BoxLayout:
-        id: header
-        Button:
-            text: 'x'
-            size_hint_y: 0.6
-            size_hint_x: None
-            width: self.height
-            background_color: (240/255, 0, 96/255, 1)
-            background_normal: ''
-            font_size: self.height * 0.7
-            pos_hint: {'top': 1}
-            on_release: app.root.handle_x_click(self)
-        Label:
-            text: ''
-            text_size: (self.width * 0.9, None)
-            font_size: self.height * 0.4
-            shorten: True
-            halign: 'center'
-    CustomProgressBar:
-        size_hint_y: 0.2
-        max: 100
-""")
-
+# Global code
 ssl._create_default_https_context = ssl._create_unverified_context
-downloads_folder = expanduser('~/Downloads')
+downloads_queue = Queue()
 
-downloads_processes = {}
+# Base download thread class
+class DownloadThread(Thread):
+    def __init__(self, id, url, mp3, start_msg, error_msg):
+        super().__init__(daemon=True)
+        self._stop_event = Event() 
+        self.url = url
+        self.mp3 = mp3
+        self.id = id
+        self.start_msg = start_msg
+        self.error_msg = error_msg
 
-def on_progress_closure(id, downloads_queue):
-    def on_progress(stream, chunk, bytes_remaining):
+    def stop(self):
+        self._stop_event.set()
+    
+    def isStopped(self):
+        return self._stop_event.is_set()
+    
+    def updateStart(self):
+        downloads_queue.put((self.id, TYPE_TEXT, self.start_msg))
+    
+    def updateError(self):
+        downloads_queue.put((self.id, TYPE_TEXT, self.error_msg))
+    
+    def updateEnd(self):
+        downloads_queue.put((self.id, TYPE_END, None))
+
+    def updateStopped(self):
+        downloads_queue.put((self.id, DOWNLOAD_STOPPED, None))
+    
+    def run(self):
+        try:
+            self.updateStart()
+            self.download()
+        except DownloadStoppedException:
+            self.updateStopped()
+            return
+        except Exception:
+            self.updateError()
+        sleep(END_DELAY)
+        self.updateEnd()
+
+# Download stopped exception
+class DownloadStoppedException(Exception):
+    def __init__(self, *args):
+        super().__init__(*args)
+
+# Single thread download class
+class SingleDownloadThread(DownloadThread):
+    def __init__(self, id, url, mp3):
+        super().__init__(id, url, mp3, DOWNLOADING_VIDEO_MSG, DOWNLOAD_VIDEO_ERROR)
+    
+    def onProgress(self, stream, _, bytes_remaining):
+        if self.isStopped():
+            raise DownloadStoppedException()
         total_size = stream.filesize
         bytes_downloaded = total_size - bytes_remaining
-        percentage = (bytes_downloaded / total_size)
-        downloads_queue.put({'id': id, 'type': 'progress', 'value': percentage})
-    return on_progress
+        percentage = int((bytes_downloaded / total_size) * 100)
+        downloads_queue.put((self.id, TYPE_PROGRESS, percentage))
+    
+    def download(self):
+        youtube_object = YouTube(self.url, on_progress_callback=self.onProgress)
+        downloads_queue.put((self.id, TYPE_TEXT, youtube_object.title))
+        stream = youtube_object.streams.get_audio_only() if self.mp3 else youtube_object.streams.get_highest_resolution()
+        stream.download(output_path=DOWNLOAD_FOLDER, mp3=self.mp3)
 
-def do_download_video(url, format, id, downloads_queue):
-    try:
-        downloads_queue.put({'id': id, 'type': 'text', 'value': 'Downloading video'})
-        op = on_progress_closure(id, downloads_queue)
-        youtube_object = YouTube(url, on_progress_callback=op)
-        downloads_queue.put({'id': id, 'type': 'text', 'value': youtube_object.title})
-        if format == 'MP4':
-            youtube_object.streams.get_highest_resolution().download(output_path=downloads_folder, skip_existing=False)
-        else:
-            youtube_object.streams.filter(only_audio=True).first().download(output_path=downloads_folder, skip_existing=False, filename=youtube_object.title + '.mp3')
-    except Exception as e:
-        downloads_queue.put({'id': id, 'type': 'text', 'value': 'Couldn\'t download video'})
-    sleep(1)
-    downloads_queue.put({'id': id, 'type': 'close'})
-
-def do_download_playlist(url, format, id, downloads_queue):
-    try:
-        downloads_queue.put({'id': id, 'type': 'text', 'value': 'Processing playlist url'})
-        playlist_object = Playlist(url)
+# playlist download thread class
+class PlaylistDownloadThread(DownloadThread):
+    def __init__(self, id, url, mp3):
+        super().__init__(id, url, mp3, PROCESSING_URL_MSG, PROCESSING_URL_ERROR)
+    
+    def download(self):
+        playlist_object = Playlist(self.url)
         urls = list(playlist_object.video_urls)
-    except Exception as e:
-        downloads_queue.put({'id': id, 'type': 'text', 'value': 'Couldn\'t process playlist url'})
-    downloads_queue.put({'id': id, 'type': 'text', 'value': f'{playlist_object.title} ({len(urls)} items)'})
-    downloads_queue.put({'id': id, 'type': 'progress', 'value': 1})
-    downloads_queue.put({'id': id, 'type': 'playlist', 'value': (format, urls)})
-    sleep(1)
-    downloads_queue.put({'id': id, 'type': 'close'})
+        text_value = f'{playlist_object.title} ({len(urls)} items)'
+        downloads_queue.put((self.id, TYPE_TEXT, text_value))
+        downloads_queue.put((self.id, TYPE_PROGRESS, 1))
+        downloads_queue.put((self.id, TYPE_PLAYLIST, (self.mp3, urls)))
 
-class CustomProgressBar(Widget):
-    def __init__(self, **kwargs):
-        super(CustomProgressBar, self).__init__(**kwargs)
-        self.progress = 0
-        self.bind(size=self.update_progress_bar, pos=self.update_progress_bar)
-    def set_progress_value(self, progress):
-        self.progress = progress
-        self.update_progress_bar(self, self.width)
-    def update_progress_bar(self, instance, value):
-        self.canvas.after.clear()
-        with self.canvas.after:
-            Color(0.2, 0.6, 1, 1)
-            Rectangle(pos=self.pos, size=(self.width * self.progress, self.height))
-
-class DownloadWidget(BoxLayout):
-    pass
-
-class YouTubeDownloader(BoxLayout):
-    def __init__(self, queue, **kwargs):
-        super().__init__(**kwargs)
-        self.queue = queue
-        Clock.schedule_interval(self.update_downloads, 0.1)
-
-    def update_downloads(self, dt):
-        while not self.queue.empty():
-            update = self.queue.get()
-            update_type = update.get('type')
-            update_value = update.get('value')
-            download_id = update.get('id')
-            download_widget = self.find_download_widget(download_id)
-            if download_widget is None:
-                return
-            if update_type == 'text':
-                download_widget.children[1].children[0].text = update_value
-            elif update_type == 'progress':
-                download_widget.children[0].set_progress_value(update_value)
-            elif update_type == 'close':
-                self.remove_download(download_id)
-            elif update_type == 'playlist':
-                format, urls = update_value
-                for url in urls:
-                    self.download(url, format)
-
-    def download(self, url, format):
-        uniqueId = str(random())
-        update_box = self.ids.update_box
-        download_widget = DownloadWidget()
-        download_widget.id = uniqueId
-        update_box.add_widget(download_widget)
-        do_download = do_download_playlist if 'list=' in url else do_download_video
-        download_process = Process(target=do_download, args=(url, format, uniqueId, self.queue))
-        downloads_processes[uniqueId] = download_process
-        download_process.start()
+# Download widget
+class DownloadWidget(QWidget):
+    def __init__(self, id, on_close):
+        super().__init__()
+        self.id = id
+        self.initUI(on_close)
+        
+    def initUI(self, on_close):
+        self.setObjectName('downloadWidget')
+        self.label = QLabel()
+        self.label.setWordWrap(False)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
+        label_and_rogress_bar = QVBoxLayout()
+        label_and_rogress_bar.addWidget(self.label)
+        label_and_rogress_bar.addWidget(self.progress_bar)
+        button = QPushButton('x')
+        button.setObjectName('closeDownload')
+        button.clicked.connect(partial(on_close, self.id))
+        layout = QHBoxLayout()
+        layout.addWidget(button)
+        layout.addLayout(label_and_rogress_bar)
+        self.setLayout(layout)
     
-    def handle_x_click(self, button):
-        self.remove_download(button.parent.parent.id)
+    def setProgress(self, value):
+        self.progress_bar.setValue(value)
 
-    def find_download_widget(self, id):
-        update_box = self.ids.update_box
-        for child in update_box.children:
-            if child.id == id:
-                return child
-        return None
+    def setText(self, value):
+        metrics = QFontMetrics(self.font())
+        value = metrics.elidedText(value, Qt.TextElideMode.ElideRight, self.label.width())
+        self.label.setText(value)
+
+    def paintEvent(self, e):
+        styleOption = QStyleOption()
+        styleOption.initFrom(self)
+        painter = QPainter(self)
+        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, styleOption, painter, self)
+
+# Download list class
+class DownloadsList(QScrollArea):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
     
-    def remove_download(self, id):
-        download_widget = self.find_download_widget(id)
-        if download_widget is not None:
-            self.ids.update_box.remove_widget(download_widget)
-        downloads_process = downloads_processes.pop(id)
-        if downloads_process is not None:
-            downloads_process.terminate()
+    def initUI(self):
+        self.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_content.setObjectName('scrollContent')
+        self.scroll_layout = QVBoxLayout(scroll_content)
+        self.scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self.scroll_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.setWidget(scroll_content)
+        self.addWidget = self.scroll_layout.addWidget
+        self.removeWidget = self.scroll_layout.removeWidget
 
-class YouTubeDownloaderApp(App):
-    def __init__(self, queue,  **kwargs):
-        super().__init__(**kwargs)
-        self.queue = queue
-    def build(self):
-        return YouTubeDownloader(self.queue)
-    def on_stop(self, *args):
-        for download_process in downloads_processes.values():
-            download_process.terminate()
-        return True
+# Main title class
+class MainTitle(QLabel):
+    def __init__(self):
+        super().__init__(APP_TITLE)
 
-if __name__ == '__main__':
-    with Manager() as manager:
-        downloads_queue = manager.Queue()
-        YouTubeDownloaderApp(downloads_queue).run()
+# Input url class
+class InputUrl(QLineEdit):
+    def __init__(self):
+        super().__init__()
+        self.setPlaceholderText(INPUT_PLACE_HOLDER)
+
+# Download buttons container class
+class DownloadButtons(QHBoxLayout):
+    def __init__(self, download_mp3, download_mp4):
+        super().__init__()
+        self.initUI(download_mp3, download_mp4)
+
+    def initUI(self, download_mp3, download_mp4):
+        self.setObjectName('downloadButtons')
+        button1 = QPushButton(MP3_BUTTON_TYPE_TEXT)
+        button2 = QPushButton(MP4_BUTTON_TYPE_TEXT)
+        button1.clicked.connect(download_mp3)
+        button2.clicked.connect(download_mp4)
+        self.addWidget(button1)
+        self.addWidget(button2)
+
+# Main app class
+class YoutubeDownloader(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+
+    def initUI(self):
+        self.setFixedSize(WINDOW_WIDTH, WINDOW_HIGHT)
+        self.setWindowTitle(APP_TITLE)
+        layout = QVBoxLayout()
+        self.input_field = InputUrl()
+        layout.addWidget(MainTitle())
+        layout.addWidget(self.input_field)
+        layout.addLayout(DownloadButtons(self.downloadMp3, self.downloadMp4))
+        self.downloads_list = DownloadsList()
+        layout.addWidget(self.downloads_list)
+        self.setLayout(layout)
+        self.active_downloads = {}
+        self.scheduleUpdate()
+        
+    def scheduleUpdate(self): 
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update)
+        self.timer.start(HALF_SECOND)
+
+    def downloadMp3(self):
+        self.download(self.input_field.text(), True)
+
+    def downloadMp4(self):
+        self.download(self.input_field.text(), False)
+    
+    def download(self, url, mp3):
+        id = str(random())
+        download_widget = DownloadWidget(id, self.stopDownload)
+        download_thread = PlaylistDownloadThread(id, url, mp3) if 'list=' in url else SingleDownloadThread(id, url, mp3)
+        self.active_downloads[id] = (download_thread, download_widget)
+        self.downloads_list.addWidget(download_widget)
+        download_thread.start()
+        self.input_field.clear()
+    
+    def update(self):
+        while not downloads_queue.empty():
+            update_id, update_type, update_value = downloads_queue.get()
+            update_download = self.active_downloads[update_id]
+            if update_type == TYPE_PROGRESS:
+                update_download[1].setProgress(update_value)
+            elif update_type == TYPE_TEXT:
+                update_download[1].setText(update_value)
+            elif update_type == TYPE_END:
+                self.endDonlowd(update_id)
+            elif update_type == DOWNLOAD_STOPPED:
+                self.endStoppedDownload(update_id)
+            elif update_type == TYPE_PLAYLIST:
+                self.downloadPlaylist(*update_value)
+
+    def stopDownload(self, id):
+        download_thread, download_widget = self.active_downloads[id]
+        self.downloads_list.removeWidget(download_widget)
+        download_widget.deleteLater()
+        download_thread.stop()
+
+    def endStoppedDownload(self, id): 
+        self.active_downloads.pop(id)[0].join()
+    
+    def downloadPlaylist(self, mp3, urls):
+        for url in urls:
+            self.download(url, mp3)
+
+    def endDonlowd(self, id):
+        download_thread, download_widget = self.active_downloads.pop(id)
+        download_thread.join()
+        self.downloads_list.removeWidget(download_widget)
+        download_widget.deleteLater()
+
+app = QApplication(sys.argv)
+window = YoutubeDownloader()
+stylesheet_path = os.path.join(os.path.dirname(__file__), 'style.qss')
+stylesheet = open(stylesheet_path, 'r').read()
+window.setStyleSheet(stylesheet)
+window.show()
+sys.exit(app.exec())
