@@ -29,8 +29,7 @@ DOWNLOAD_VIDEO_ERROR = 'Couldn\'t download video'
 PROCESSING_URL_MSG = 'Processing playlist url'
 PROCESSING_URL_ERROR = 'Couldn\'t process playlist url'
 HALF_SECOND = 500
-WINDOW_WIDTH = 600
-WINDOW_HIGHT = 500
+WINDOW_SIZE = (600, 550)
 END_DELAY = 0.5
 
 # Global code
@@ -203,7 +202,7 @@ class YoutubeDownloader(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HIGHT)
+        self.setFixedSize(*WINDOW_SIZE)
         self.setWindowTitle(APP_TITLE)
         layout = QVBoxLayout()
         self.input_field = InputUrl()

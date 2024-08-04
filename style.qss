@@ -9,10 +9,11 @@ MainTitle {
     color: #ff3679;
 }
 InputUrl {
-    padding: 10px;
+    padding: 13px;
     border-radius: 10px;
-    border: 1px solid #ffa3ad;
+    border: 2px solid #ffa3ad;
     color: #950011;
+    font-size: 15px;
 }
 InputUrl:hover {
     border-color: #ff364e;
@@ -21,8 +22,9 @@ InputUrl:hover {
 QPushButton {
     border-radius: 10px;
     background-color: #ff3679;
-    padding: 10px;
+    padding: 15px;
     color: white;
+    font-size: 15px;
 }
 
 QPushButton:hover {
