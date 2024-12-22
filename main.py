@@ -12,7 +12,8 @@ import re
 import os
 
 ffmpeg_path = os.path.join(os.path.dirname(__file__), "ffmpeg", "ffmpeg")
-output_path = f'{os.path.expanduser("~/Downloads")}/%(title)s.%(ext)s'
+css_path = os.path.join(os.path.dirname(__file__), "main.css")
+output_path = f'{os.path.expanduser("~/Downloads")}/%(title).50s.%(ext)s'
 
 YT_DLP_MP4_OPTIONS = {
     'quiet': True,
@@ -118,13 +119,14 @@ def download_widget(cancel_callback):
 
     button = QPushButton('Cancel')
     button.clicked.connect(cancel_callback)
+    button.setObjectName('cancel-button')
 
     item_layout.addLayout(label_and_progress_layout)
-    item_layout.addWidget(button)
+    item_layout.addWidget(button, alignment=Qt.AlignmentFlag.AlignBottom)
 
     # Wrapping item layout into a QWidget
     widget.setLayout(item_layout)
-    widget.setObjectName('downloadItem')
+    widget.setObjectName('download-item')
     widget.setFixedHeight(70)
     return widget
 
@@ -132,19 +134,26 @@ class VideoDownloaderApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Video Downloader')
-        self.resize(500, 600)
+        self.setFixedSize(500, 500)
+        self.setObjectName('window')
 
         # Main layout
         main_layout = QVBoxLayout()
 
         # 1. Main Title
         title_label = QLabel('Video Downloader')
-        title_label.setStyleSheet("font-size: 24px; font-weight: bold;")
+        title_label.setObjectName('main-title')
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(title_label)
+        sub_title_label = QLabel('Download videos from various platforms like YouTube, Twitter, \nFacebook, TikTok, and more')
+        sub_title_label.setObjectName('sub-title')
+        sub_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(sub_title_label)
+
 
         # 2. Input Field
         self.input_field = QLineEdit()
+        self.input_field.setObjectName('input-field')
         self.input_field.setPlaceholderText('Enter url of video...')
         main_layout.addWidget(self.input_field)
 
@@ -154,6 +163,8 @@ class VideoDownloaderApp(QWidget):
         button1.clicked.connect(lambda: self.download('mp4'))
         button2 = QPushButton('Download Audio')
         button2.clicked.connect(lambda: self.download('mp3'))
+        button1.setObjectName('download-button')
+        button2.setObjectName('download-button')
         button_layout.addWidget(button1)
         button_layout.addWidget(button2)
         main_layout.addLayout(button_layout)
@@ -161,10 +172,13 @@ class VideoDownloaderApp(QWidget):
         # 4. Scrollable List of Items
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
+        scroll_area.setObjectName('scroll-area')
 
         # Container for scrollable content
         scroll_content = QWidget()
+        scroll_content.setObjectName('scroll-content')
         scroll_layout = QVBoxLayout()
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
         scroll_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         scroll_content.setLayout(scroll_layout)
 
@@ -173,7 +187,7 @@ class VideoDownloaderApp(QWidget):
 
         # Set main layout
         self.setLayout(main_layout)
-        self.setStyleSheet("#downloadItem {background-color: lightgray;border-radius: 3px;}")      
+        self.setStyleSheet(open(css_path).read())  
 
         # Set download items, downloads dict and downloads queue
         self.download_items = scroll_layout

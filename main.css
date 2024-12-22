@@ -1,0 +1,61 @@
+#window {
+    background-color: white;
+}
+
+#main-title {
+    color: rgb(124, 42, 165);
+    font-size: 30px;
+    font-weight: bold;
+}
+
+#sub-title {
+    color: rgb(124, 42, 165);
+    padding-bottom: 15px;
+    padding-top: 4px;
+}
+
+#input-field {
+    padding: 10px 5px;
+    border-radius: 15px;
+    border: 1px solid rgb(206, 160, 229);
+}
+
+#input-field:hover {
+    border-color: rgb(88, 3, 131);
+}
+
+#download-button {
+    padding: 10px 0;
+    border-radius: 15px;
+    background-color:rgb(124, 42, 165);
+    color: white;
+}
+
+#download-button:hover {
+    background-color:rgb(64, 1, 95);
+}
+
+#scroll-area {
+    border: none;
+}
+
+#scroll-content {
+    background-color: white;
+}
+
+#download-item {
+    background-color: rgb(247, 234, 253);
+    border-radius: 15px;
+}
+
+#cancel-button {
+    padding: 3px 7px;
+    border-radius: 5px;
+    background-color:rgb(124, 42, 165);
+    font-size: 12px;
+    color: white;
+}
+
+#cancel-button:hover {
+    background-color:rgb(64, 1, 95);
+}
