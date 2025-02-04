@@ -206,7 +206,7 @@ class VideoDownloaderApp(QWidget):
             ydl_opts = self.get_options(format, download_id)
             with YoutubeDL(ydl_opts) as ydl:
                 ydl.download(urls.split())
-            self.downloads_queue.put((download_id, 'Download Complete', None, 0, 'fileready'))
+            self.downloads_queue.put((download_id, 'Download Complete', None, 100, 'fileready'))
         except Exception:
             self.downloads_queue.put((download_id, 'Error Downloading Video', None, 0, 'error'))
 
